@@ -45,7 +45,7 @@ OFFICE_STATE = {
     "work_mode": "feature",
     "project_name": "OrderSystem",
     "workspace_path": os.path.abspath("./workspace"),
-    "repo_url": "https://github.com/worawut-boxsolution/ai-order-service.git",
+    "repo_url": "",
     "phase": "รอรับการตั้งค่าโปรเจกต์และ Requirement บนหน้าเว็บ...",
     "agents": {role: {"status": "Idle", "action": "นั่งจิบกาแฟรอรับงาน ☕"} for role in OFFICE_Roles},
     "logs": []
