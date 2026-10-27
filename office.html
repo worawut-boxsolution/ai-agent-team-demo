@@ -1,0 +1,716 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <title>🏢 AI Software House - 3D Virtual Office</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Prompt:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- โหลด Three.js สำหรับสร้างฉาก 3D และ OrbitControls สำหรับหมุนกล้อง -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+    <style>
+        body { font-family: 'Prompt', sans-serif; overflow-x: hidden; background-color: #141517; color: #f1f5f9; }
+        #canvas-container { position: relative; width: 100%; height: 640px; background: radial-gradient(circle at center, #262930 0%, #141517 100%); border-radius: 1.5rem; overflow: hidden; border: 1px solid #2e323b; box-shadow: 0 20px 50px rgba(0,0,0,0.6); }
+        
+        /* ป้ายลอยเหนือหัวตัวการ์ตูน 3D (ถอดแบบจากภาพ) */
+        .agent-bubble {
+            position: absolute;
+            transform: translate(-50%, -100%);
+            pointer-events: none;
+            transition: opacity 0.2s, transform 0.2s;
+            z-index: 10;
+            min-width: 190px;
+            max-width: 240px;
+            background: rgba(20, 22, 25, 0.92);
+            backdrop-filter: blur(6px);
+            border-radius: 14px;
+            padding: 8px 14px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+        }
+        .agent-bubble.working {
+            animation: floatBubble 1.8s ease-in-out infinite;
+        }
+        @keyframes floatBubble {
+            0%, 100% { transform: translate(-50%, -100%) translateY(0px); }
+            50% { transform: translate(-50%, -100%) translateY(-6px); }
+        }
+        .check-badge {
+            position: absolute;
+            bottom: -12px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 24px;
+            height: 24px;
+            background: #22c55e;
+            color: white;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 13px;
+            font-weight: bold;
+            box-shadow: 0 0 12px rgba(34, 197, 94, 0.8);
+            border: 2px solid #141517;
+        }
+    </style>
+</head>
+<body class="p-4 md:p-6">
+    <div class="max-w-7xl mx-auto">
+        
+        <!-- Top Control & Action Bar -->
+        <div class="flex flex-col lg:flex-row justify-between items-center bg-slate-900/90 p-4 rounded-2xl border border-slate-800 mb-4 shadow-lg gap-3">
+            <div class="flex items-center gap-3">
+                <div class="text-3xl bg-slate-800 p-2.5 rounded-xl">🏢</div>
+                <div>
+                    <h1 class="text-xl font-bold bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+                        AI Software House (3D Isometric Office)
+                    </h1>
+                    <p id="project-banner" class="text-slate-400 text-xs">คลิกซ้ายลากเพื่อหมุนมุมกล้อง 3D | ลูกกลิ้งเมาส์เพื่อซูมเข้า-ออก</p>
+                </div>
+            </div>
+
+            <div class="flex flex-wrap items-center gap-2">
+                <button onclick="toggleConfigPanel()" class="bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 text-xs font-semibold px-3.5 py-2 rounded-xl transition cursor-pointer">
+                    ⚙️ ตั้งค่า / สั่งงานใหม่
+                </button>
+                <button onclick="openFolder()" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-medium px-3.5 py-2 rounded-xl border border-slate-700 transition cursor-pointer">
+                    📂 เปิดโฟลเดอร์งาน
+                </button>
+                <button id="run-app-btn" onclick="runApp()" class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow transition cursor-pointer">
+                    ▶️ รันเว็บจริง (API + Blazor)
+                </button>
+                <button id="stop-app-btn" onclick="stopApp()" class="hidden bg-rose-600 hover:bg-rose-500 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow transition cursor-pointer">
+                    ⏹️ หยุดรันเว็บ
+                </button>
+            </div>
+        </div>
+
+        <!-- Collapsible Requirement & Config Panel -->
+        <div id="requirement-panel" class="bg-slate-900 rounded-2xl border border-emerald-500/40 p-5 mb-5 shadow-xl">
+            <div class="flex justify-between items-center mb-3">
+                <h2 class="text-base font-bold text-white flex items-center gap-2">
+                    <span>💡</span> ตั้งค่าโปรเจกต์ เลือกโหมดการทำงาน และระบุ Requirement
+                </h2>
+                <button onclick="toggleConfigPanel()" class="text-slate-400 hover:text-white text-xs">✕ ซ่อนหน้าต่างนี้</button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-3 mb-3">
+                <div>
+                    <label class="block text-xs text-emerald-400 font-semibold mb-1">🛠️ โหมดการทำงาน:</label>
+                    <select id="work-mode" class="w-full bg-slate-950 border border-emerald-500/50 rounded-xl px-3 py-2 text-xs text-white font-medium focus:outline-none">
+                        <option value="feature">➕ เพิ่มฟีเจอร์ใหม่ (ต่อยอดโปรเจกต์เดิม)</option>
+                        <option value="scale">🚀 ขยายขนาด/เพิ่มประสิทธิภาพ (Scalability)</option>
+                        <option value="new">🆕 สร้างโปรเจกต์ใหม่ตั้งแต่ต้น (New Project)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">🏷️ ชื่อโปรเจกต์ (Solution Name):</label>
+                    <input type="text" id="proj-name" value="OrderSystem" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-emerald-300 font-medium">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">📂 ตำแหน่งโปรเจกต์ (Workspace Path):</label>
+                    <input type="text" id="proj-path" value="./workspace" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-slate-200">
+                </div>
+                <div>
+                    <label class="block text-xs text-slate-400 mb-1">🔗 GitHub Repository URL:</label>
+                    <input type="text" id="repo-url" value="https://github.com/worawut-boxsolution/ai-order-service.git" class="w-full bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 text-xs text-cyan-300">
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 lg:grid-cols-3 gap-3">
+                <div class="lg:col-span-2">
+                    <textarea id="req-text" rows="3" class="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-200 focus:outline-none focus:border-emerald-500" placeholder="ระบุความต้องการของระบบ หรือฟีเจอร์ที่ต้องการให้ทีม AI พัฒนาต่อยอด..."></textarea>
+                </div>
+                <div class="flex flex-col justify-between bg-slate-950 p-3 rounded-xl border border-slate-800">
+                    <div>
+                        <label class="block text-[11px] text-slate-400 mb-1">📎 อัปโหลดไฟล์สเปค (.txt, .md, .json):</label>
+                        <input type="file" id="req-file" accept=".txt,.md,.json,.csv" class="block w-full text-[11px] text-slate-400 file:mr-2 file:py-1 file:px-3 file:rounded-lg file:border-0 file:text-[11px] file:bg-slate-800 file:text-emerald-400 cursor-pointer" onchange="handleFileUpload(event)">
+                        <p id="file-name-display" class="text-[10px] text-emerald-400 mt-1 truncate"></p>
+                    </div>
+                    <button id="start-btn" onclick="submitRequirement()" class="mt-2 w-full bg-gradient-to-r from-emerald-500 to-cyan-500 hover:from-emerald-600 hover:to-cyan-600 text-slate-950 font-bold py-2.5 px-4 rounded-xl text-xs shadow-lg transition cursor-pointer">
+                        🚀 สั่งทีม AI ลุยงานทันที
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ========================================== -->
+        <!-- 3D ISOMETRIC VIRTUAL OFFICE VIEWPORT       -->
+        <!-- ========================================== -->
+        <div id="canvas-container" class="mb-6">
+            
+            <!-- Top Pipeline Stepper Overlay (เหมือนในรูปภาพ) -->
+            <div class="absolute top-4 left-4 right-4 flex justify-between items-center z-20 pointer-events-none">
+                <div id="pipeline-steps" class="flex flex-wrap items-center gap-1.5 bg-slate-950/80 backdrop-blur-md px-3.5 py-2 rounded-full border border-slate-800 pointer-events-auto">
+                    <!-- สร้างด้วย JS -->
+                </div>
+                <button onclick="resetCamera()" title="รีเซ็ตมุมกล้อง" class="bg-slate-900/90 hover:bg-slate-800 text-slate-300 w-10 h-10 rounded-full border border-slate-700 flex items-center justify-center text-lg shadow-lg pointer-events-auto cursor-pointer">
+                    ↻
+                </button>
+            </div>
+
+            <!-- Floating HTML Speech Bubbles Layer -->
+            <div id="bubbles-layer" class="absolute inset-0 pointer-events-none overflow-hidden"></div>
+
+            <!-- Bottom Timer & Token Usage Bar Overlay (เหมือนในรูปภาพ) -->
+            <div class="absolute bottom-4 left-4 right-4 flex flex-col md:flex-row items-center gap-3 z-20 pointer-events-none">
+                <!-- Timer Box -->
+                <div class="bg-slate-950/90 backdrop-blur-md border border-slate-800 px-5 py-3 rounded-2xl flex items-center gap-3 shadow-xl min-w-[145px]">
+                    <span class="text-slate-400 text-lg">⏱️</span>
+                    <span id="timer-display" class="font-mono text-2xl font-bold text-white tracking-wider">00:00</span>
+                </div>
+
+                <!-- Token & Phase Progress Bar -->
+                <div class="flex-1 w-full bg-slate-950/90 backdrop-blur-md border-2 border-amber-500/70 px-5 py-2.5 rounded-2xl shadow-xl">
+                    <div class="flex justify-between items-center mb-1.5">
+                        <div class="flex items-center gap-2">
+                            <span class="text-amber-400 text-lg">💎</span>
+                            <span id="token-count" class="font-mono text-lg font-bold text-white">0</span>
+                            <span class="text-xs text-slate-400">estimated tokens</span>
+                            <span class="text-xs text-emerald-400 ml-3 font-medium" id="current-phase">รอรับคำสั่ง...</span>
+                        </div>
+                        <div class="font-mono text-xs text-slate-400">
+                            ↑<span id="token-up">0</span> ↓<span id="token-down">0</span>
+                        </div>
+                    </div>
+                    <div class="w-full h-2 bg-slate-800 rounded-full overflow-hidden">
+                        <div id="progress-bar" class="h-full bg-gradient-to-r from-amber-500 via-emerald-400 to-cyan-400 transition-all duration-500" style="width: 5%"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Live Activity Terminal -->
+        <div class="bg-slate-900 rounded-2xl border border-slate-800 p-4 shadow-lg">
+            <div class="flex justify-between items-center mb-2">
+                <h2 class="text-xs font-semibold text-slate-400 uppercase tracking-wider flex items-center gap-2">
+                    <span>🖥️</span> Live Office Activity Log
+                </h2>
+                <span class="text-[11px] text-slate-500">3D WebGL + Real-time Memory API</span>
+            </div>
+            <div id="logs" class="font-mono text-xs text-slate-300 space-y-1 max-h-48 overflow-y-auto bg-slate-950 p-3.5 rounded-xl border border-slate-800/80"></div>
+        </div>
+    </div>
+
+    <script>
+        // ====================================================
+        // 1. ตั้งค่าข้อมูลพนักงานทั้ง 7 ตำแหน่ง และสีประจำตัว
+        // ====================================================
+        const agentsConfig = [
+            { role: 'System Analyst (SA)', short: 'SA', color: '#3b82f6', shirt: 0x2563eb, hair: 0x1e293b },
+            { role: 'Solution Architect (.NET)', short: 'Architect', color: '#06b6d4', shirt: 0x0891b2, hair: 0x475569 },
+            { role: 'Senior .NET Backend Developer', short: 'Backend Dev', color: '#10b981', shirt: 0x059669, hair: 0x0f172a },
+            { role: 'Senior Blazor Frontend Developer', short: 'Frontend UI', color: '#ec4899', shirt: 0xdb2777, hair: 0x3b0764 },
+            { role: 'QA Automation Engineer (.NET)', short: 'Tester / QA', color: '#f59e0b', shirt: 0xd97706, hair: 0xfde047 },
+            { role: 'Technical Writer & Product Specialist', short: 'Summary / Doc', color: '#a855f7', shirt: 0x9333ea, hair: 0x451a03 },
+            { role: 'DevOps Engineer', short: 'DevOps', color: '#f43f5e', shirt: 0xe11d48, hair: 0x334155 }
+        ];
+
+        let startTime = null;
+        let wasRunning = false;
+        let estimatedTokens = 0;
+
+        // ====================================================
+        // 2. สร้างฉาก 3D Isometric ด้วย Three.js
+        // ====================================================
+        const container = document.getElementById('canvas-container');
+        const scene = new THREE.Scene();
+
+        const camera = new THREE.PerspectiveCamera(38, container.clientWidth / container.clientHeight, 0.1, 1000);
+        camera.position.set(0, 13, 16);
+
+        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+        renderer.setSize(container.clientWidth, container.clientHeight);
+        renderer.setPixelRatio(window.devicePixelRatio);
+        renderer.shadowMap.enabled = true;
+        renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+        container.appendChild(renderer.domElement);
+
+        const controls = new THREE.OrbitControls(camera, renderer.domElement);
+        controls.enableDamping = true;
+        controls.dampingFactor = 0.05;
+        controls.maxPolarAngle = Math.PI / 2.15; // ไม่ให้มุดใต้พื้น
+        controls.minDistance = 8;
+        controls.maxDistance = 26;
+        controls.target.set(0, 0.8, 0);
+
+        function resetCamera() {
+            camera.position.set(0, 13, 16);
+            controls.target.set(0, 0.8, 0);
+        }
+
+        // แสงสว่างในออฟฟิศ
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+        scene.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xfffbeb, 0.85);
+        dirLight.position.set(10, 18, 12);
+        dirLight.castShadow = true;
+        dirLight.shadow.mapSize.width = 2048;
+        dirLight.shadow.mapSize.height = 2048;
+        scene.add(dirLight);
+
+        // พื้นห้องและพรมวงกลมเหมือนในรูป
+        const outerFloor = new THREE.Mesh(
+            new THREE.CylinderGeometry(7.2, 7.2, 0.15, 64),
+            new THREE.MeshStandardMaterial({ color: 0x9ca3af, roughness: 0.8 })
+        );
+        outerFloor.position.y = -0.08;
+        outerFloor.receiveShadow = true;
+        scene.add(outerFloor);
+
+        const innerRug = new THREE.Mesh(
+            new THREE.CylinderGeometry(4.8, 4.8, 0.17, 64),
+            new THREE.MeshStandardMaterial({ color: 0xbad5ce, roughness: 0.9 })
+        );
+        innerRug.position.y = -0.06;
+        innerRug.receiveShadow = true;
+        scene.add(innerRug);
+
+        // แท่นโฮโลแกรมตรงกลางห้อง
+        const centerTable = new THREE.Mesh(
+            new THREE.CylinderGeometry(1.15, 1.15, 0.45, 32),
+            new THREE.MeshStandardMaterial({ color: 0xd1d5db, roughness: 0.4 })
+        );
+        centerTable.position.y = 0.22;
+        centerTable.castShadow = true;
+        centerTable.receiveShadow = true;
+        scene.add(centerTable);
+
+        const holoCore = new THREE.Mesh(
+            new THREE.OctahedronGeometry(0.38, 0),
+            new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x38bdf8, emissiveIntensity: 0.9, wireframe: false })
+        );
+        holoCore.position.y = 1.05;
+        scene.add(holoCore);
+
+        const holoLight = new THREE.PointLight(0x38bdf8, 1.2, 6);
+        holoLight.position.set(0, 1.2, 0);
+        scene.add(holoLight);
+
+        // กระดานไวท์บอร์ด Kanban & ต้นไม้ประดับฉากหลัง
+        const boardGroup = new THREE.Group();
+        const boardFrame = new THREE.Mesh(
+            new THREE.BoxGeometry(2.6, 1.5, 0.08),
+            new THREE.MeshStandardMaterial({ color: 0xf8fafc })
+        );
+        boardFrame.position.y = 1.8;
+        boardGroup.add(boardFrame);
+
+        const noteColors = [0xfbbf24, 0xf87171, 0x60a5fa, 0x34d399];
+        for (let i = 0; i < 6; i++) {
+            const note = new THREE.Mesh(
+                new THREE.BoxGeometry(0.32, 0.28, 0.02),
+                new THREE.MeshBasicMaterial({ color: noteColors[i % noteColors.length] })
+            );
+            note.position.set(-0.7 + (i % 3) * 0.65, 2.05 - Math.floor(i / 3) * 0.45, 0.05);
+            boardGroup.add(note);
+        }
+        boardGroup.position.set(-4.2, 0, -4.5);
+        boardGroup.rotation.y = 0.55;
+        scene.add(boardGroup);
+
+        // ต้นไม้ในออฟฟิศ
+        const plantGroup = new THREE.Group();
+        const pot = new THREE.Mesh(new THREE.CylinderGeometry(0.35, 0.25, 0.6, 16), new THREE.MeshStandardMaterial({ color: 0x92400e }));
+        pot.position.y = 0.3;
+        const leaves = new THREE.Mesh(new THREE.SphereGeometry(0.65, 16, 16), new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.9 }));
+        leaves.position.y = 1.15;
+        leaves.scale.set(0.85, 1.35, 0.85);
+        plantGroup.add(pot, leaves);
+        plantGroup.position.set(-0.6, 0, -5.6);
+        scene.add(plantGroup);
+
+        // ====================================================
+        // 3. สร้างโต๊ะคอมพิวเตอร์และตัวการ์ตูนพนักงานทั้ง 7 คน
+        // ====================================================
+        const agent3DObjects = {};
+        const bubblesLayer = document.getElementById('bubbles-layer');
+        const radius = 3.9;
+
+        agentsConfig.forEach((ag, index) => {
+            // จัดเรียงเป็นวงกลมรอบโต๊ะโฮโลแกรม
+            const angle = (index / agentsConfig.length) * Math.PI * 2 - Math.PI / 2;
+            const x = Math.cos(angle) * radius;
+            const z = Math.sin(angle) * radius;
+
+            const station = new THREE.Group();
+            station.position.set(x, 0, z);
+            station.lookAt(0, 0, 0); // หันหน้าเข้าหากลางห้อง
+            scene.add(station);
+
+            // วงแหวนเรืองแสงใต้โต๊ะ (แสดงสถานะ Working / Done)
+            const ringMat = new THREE.MeshBasicMaterial({ color: 0x10b981, side: THREE.DoubleSide, transparent: true, opacity: 0.0 });
+            const statusRing = new THREE.Mesh(new THREE.RingGeometry(1.05, 1.25, 32), ringMat);
+            statusRing.rotation.x = Math.PI / 2;
+            statusRing.position.set(0, 0.02, -0.2);
+            station.add(statusRing);
+
+            // โต๊ะทำงานสีขาว
+            const deskTop = new THREE.Mesh(
+                new THREE.BoxGeometry(1.55, 0.07, 0.8),
+                new THREE.MeshStandardMaterial({ color: 0xf1f5f9, roughness: 0.5 })
+            );
+            deskTop.position.set(0, 0.82, 0.25);
+            deskTop.castShadow = true;
+            station.add(deskTop);
+
+            // ขาโต๊ะ 4 ขา
+            const legGeo = new THREE.CylinderGeometry(0.03, 0.03, 0.82);
+            const legMat = new THREE.MeshStandardMaterial({ color: 0x334155 });
+            [[-0.7, -0.1], [0.7, -0.1], [-0.7, 0.6], [0.7, 0.6]].forEach(([lx, lz]) => {
+                const leg = new THREE.Mesh(legGeo, legMat);
+                leg.position.set(lx, 0.41, lz);
+                station.add(leg);
+            });
+
+            // จอคอมพิวเตอร์ + หน้าจอเรืองแสงเวลาทำงาน
+            const monitorBody = new THREE.Mesh(
+                new THREE.BoxGeometry(0.72, 0.46, 0.05),
+                new THREE.MeshStandardMaterial({ color: 0x1e293b })
+            );
+            monitorBody.position.set(0, 1.15, 0.38);
+            station.add(monitorBody);
+
+            const screenMat = new THREE.MeshBasicMaterial({ color: 0x0f172a });
+            const monitorScreen = new THREE.Mesh(new THREE.PlaneGeometry(0.66, 0.40), screenMat);
+            monitorScreen.position.set(0, 1.15, 0.352);
+            monitorScreen.rotation.y = Math.PI; // หันจอเข้าหาตัวการ์ตูน
+            station.add(monitorScreen);
+
+            const stand = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.18, 0.08), legMat);
+            stand.position.set(0, 0.9, 0.38);
+            station.add(stand);
+
+            // เคส PC ข้างโต๊ะ
+            const pcTower = new THREE.Mesh(
+                new THREE.BoxGeometry(0.32, 0.68, 0.62),
+                new THREE.MeshStandardMaterial({ color: 0x18181b })
+            );
+            pcTower.position.set(-0.98, 0.34, 0.25);
+            pcTower.castShadow = true;
+            station.add(pcTower);
+
+            // เก้าอี้สำนักงานสีเดียวกับธีม
+            const chairSeat = new THREE.Mesh(new THREE.BoxGeometry(0.58, 0.08, 0.58), new THREE.MeshStandardMaterial({ color: ag.shirt }));
+            chairSeat.position.set(0, 0.48, -0.55);
+            const chairBack = new THREE.Mesh(new THREE.BoxGeometry(0.55, 0.62, 0.08), new THREE.MeshStandardMaterial({ color: ag.shirt }));
+            chairBack.position.set(0, 0.82, -0.82);
+            station.add(chairSeat, chairBack);
+
+            // ตัวการ์ตูนพนักงาน 3D (หัว + ทรงผม + ลำตัว + แขน)
+            const charGroup = new THREE.Group();
+            charGroup.position.set(0, 0.55, -0.55);
+
+            const torso = new THREE.Mesh(
+                new THREE.CylinderGeometry(0.21, 0.25, 0.52, 16),
+                new THREE.MeshStandardMaterial({ color: ag.shirt, roughness: 0.6 })
+            );
+            torso.position.y = 0.26;
+            charGroup.add(torso);
+
+            const head = new THREE.Mesh(
+                new THREE.SphereGeometry(0.23, 24, 24),
+                new THREE.MeshStandardMaterial({ color: 0xfde68a, roughness: 0.5 })
+            );
+            head.position.y = 0.72;
+            charGroup.add(head);
+
+            const hair = new THREE.Mesh(
+                new THREE.SphereGeometry(0.245, 24, 24, 0, Math.PI * 2, 0, Math.PI / 1.75),
+                new THREE.MeshStandardMaterial({ color: ag.hair, roughness: 0.8 })
+            );
+            hair.position.y = 0.74;
+            charGroup.add(hair);
+
+            // แขนซ้าย-ขวา वाงบนโต๊ะพิมพ์งาน
+            const armGeo = new THREE.CylinderGeometry(0.055, 0.055, 0.45);
+            const armMat = new THREE.MeshStandardMaterial({ color: ag.shirt });
+            const leftArm = new THREE.Mesh(armGeo, armMat);
+            leftArm.position.set(0.22, 0.34, 0.22);
+            leftArm.rotation.x = Math.PI / 2.3;
+            const rightArm = new THREE.Mesh(armGeo, armMat);
+            rightArm.position.set(-0.22, 0.34, 0.22);
+            rightArm.rotation.x = Math.PI / 2.3;
+            charGroup.add(leftArm, rightArm);
+
+            station.add(charGroup);
+
+            // จุดอ้างอิงบนหัวตัวการ์ตูนสำหรับผูกป้าย HTML Speech Bubble
+            const anchor = new THREE.Object3D();
+            anchor.position.set(0, 1.75, -0.45);
+            station.add(anchor);
+
+            // สร้าง HTML Bubble ประจำตัว
+            const bubbleEl = document.createElement('div');
+            bubbleEl.className = 'agent-bubble';
+            bubbleEl.style.border = `2px solid ${ag.color}`;
+            bubbleEl.innerHTML = `
+                <div class="flex items-center gap-2 mb-0.5">
+                    <span class="w-2.5 h-2.5 rounded-full" style="background:${ag.color}"></span>
+                    <span class="font-bold text-sm text-white">${ag.short}</span>
+                </div>
+                <div class="text-[11px] text-slate-300 truncate status-text">Waiting</div>
+                <div class="check-badge hidden">✓</div>
+            `;
+            bubblesLayer.appendChild(bubbleEl);
+
+            agent3DObjects[ag.role] = {
+                charGroup,
+                leftArm,
+                rightArm,
+                screenMat,
+                ringMat,
+                anchor,
+                bubbleEl,
+                status: 'Idle',
+                phaseOffset: index * 1.3
+            };
+        });
+
+        // ====================================================
+        // 4. Animation Loop (60 FPS) & คำนวณพิกัดป้ายชื่อ 3D -> 2D
+        // ====================================================
+        const clock = new THREE.Clock();
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const t = clock.getElapsedTime();
+
+            controls.update();
+
+            // หมุนโฮโลแกรมตรงกลางห้อง
+            holoCore.rotation.y = t * 0.9;
+            holoCore.rotation.x = Math.sin(t * 1.5) * 0.3;
+            holoCore.position.y = 1.05 + Math.sin(t * 2.2) * 0.08;
+
+            // อัปเดตท่าทางตัวการ์ตูนและตำแหน่งป้าย HTML Bubble
+            const widthHalf = container.clientWidth / 2;
+            const heightHalf = container.clientHeight / 2;
+
+            Object.values(agent3DObjects).forEach(obj => {
+                if (obj.status === 'Working') {
+                    // ขยับตัวและขยับแขนพิมพ์คีย์บอร์ดรัวๆ
+                    obj.charGroup.position.y = 0.55 + Math.abs(Math.sin(t * 9 + obj.phaseOffset)) * 0.06;
+                    obj.charGroup.rotation.y = Math.sin(t * 5) * 0.08;
+                    obj.leftArm.rotation.x = Math.PI / 2.3 + Math.sin(t * 18) * 0.15;
+                    obj.rightArm.rotation.x = Math.PI / 2.3 + Math.cos(t * 18) * 0.15;
+                    // จอคอมพิวเตอร์กะพริบแสงโค้ดสีเขียว
+                    obj.screenMat.color.setHex(Math.sin(t * 12) > 0 ? 0x10b981 : 0x059669);
+                    obj.ringMat.color.setHex(0x10b981);
+                    obj.ringMat.opacity = 0.35 + Math.sin(t * 5) * 0.2;
+                } else if (obj.status === 'Done') {
+                    obj.charGroup.position.y = 0.55;
+                    obj.charGroup.rotation.y = 0;
+                    obj.screenMat.color.setHex(0x1d4ed8);
+                    obj.ringMat.color.setHex(0x22c55e);
+                    obj.ringMat.opacity = 0.45;
+                } else {
+                    // นั่งหายใจเบาๆ รอรับงาน
+                    obj.charGroup.position.y = 0.55 + Math.sin(t * 2 + obj.phaseOffset) * 0.015;
+                    obj.charGroup.rotation.y = 0;
+                    obj.screenMat.color.setHex(0x0f172a);
+                    obj.ringMat.opacity = 0.0;
+                }
+
+                // แปลงพิกัด 3D เหนือหัวตัวการ์ตูนเป็นพิกัด 2D บนหน้าจอ
+                const vector = new THREE.Vector3();
+                obj.anchor.getWorldPosition(vector);
+                vector.project(camera);
+
+                const x = (vector.x * widthHalf) + widthHalf;
+                const y = -(vector.y * heightHalf) + heightHalf;
+
+                obj.bubbleEl.style.left = `${x}px`;
+                obj.bubbleEl.style.top = `${y}px`;
+            });
+
+            renderer.render(scene, camera);
+        }
+        animate();
+
+        window.addEventListener('resize', () => {
+            camera.aspect = container.clientWidth / container.clientHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(container.clientWidth, container.clientHeight);
+        });
+
+        // ====================================================
+        // 5. เชื่อมต่อ API และอัปเดตสถานะบนหน้าจอ
+        // ====================================================
+        function toggleConfigPanel() {
+            document.getElementById('requirement-panel').classList.toggle('hidden');
+        }
+
+        function handleFileUpload(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+            document.getElementById('file-name-display').innerText = `📄 โหลดไฟล์: ${file.name}`;
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                const currentText = document.getElementById('req-text').value;
+                document.getElementById('req-text').value = currentText 
+                    ? currentText + "\n\n--- เนื้อหาจากไฟล์ (" + file.name + ") ---\n" + e.target.result 
+                    : e.target.result;
+            };
+            reader.readAsText(file);
+        }
+
+        async function openFolder() { await fetch('/api/open-folder', { method: 'POST' }); }
+        async function runApp() { await fetch('/api/run-app', { method: 'POST' }); }
+        async function stopApp() { await fetch('/api/stop-app', { method: 'POST' }); }
+
+        async function submitRequirement() {
+            const workMode = document.getElementById('work-mode').value;
+            const projName = document.getElementById('proj-name').value.trim().replace(/\s+/g, '');
+            const projPath = document.getElementById('proj-path').value.trim();
+            const repoUrl = document.getElementById('repo-url').value.trim();
+            const reqText = document.getElementById('req-text').value.trim();
+
+            if (!projName || !projPath || !reqText) {
+                alert("กรุณากรอก ชื่อโปรเจกต์, Path และรายละเอียดความต้องการให้ครบถ้วนครับ!");
+                return;
+            }
+
+            const btn = document.getElementById('start-btn');
+            btn.disabled = true;
+            btn.innerText = "⏳ กำลังสั่งการทีม AI...";
+
+            try {
+                const res = await fetch('/api/start', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        work_mode: workMode,
+                        project_name: projName,
+                        workspace_path: projPath,
+                        repo_url: repoUrl,
+                        requirement: reqText
+                    })
+                });
+                if (res.ok) {
+                    startTime = Date.now();
+                    document.getElementById('requirement-panel').classList.add('hidden');
+                }
+            } catch (e) {
+                alert("ไม่สามารถติดต่อเซิร์ฟเวอร์ได้");
+                btn.disabled = false;
+                btn.innerText = "🚀 สั่งทีม AI ลุยงานทันที";
+            }
+        }
+
+        // อัปเดตนาฬิกาจับเวลาด้านล่างซ้าย
+        setInterval(() => {
+            if (wasRunning && startTime) {
+                const diff = Math.floor((Date.now() - startTime) / 1000);
+                const mins = String(Math.floor(diff / 60)).padStart(2, '0');
+                const secs = String(diff % 60).padStart(2, '0');
+                document.getElementById('timer-display').innerText = `${mins}:${secs}`;
+            }
+        }, 1000);
+
+        function renderOffice(state) {
+            document.getElementById('current-phase').innerText = state.phase;
+
+            if (state.is_running && !wasRunning) {
+                startTime = Date.now();
+                document.getElementById('requirement-panel').classList.add('hidden');
+            }
+            wasRunning = state.is_running;
+
+            const btn = document.getElementById('start-btn');
+            if (!state.is_running) {
+                btn.disabled = false;
+                btn.innerText = "🚀 สั่งทีม AI ลุยงานทันที";
+            }
+
+            const runBtn = document.getElementById('run-app-btn');
+            const stopBtn = document.getElementById('stop-app-btn');
+            if (state.app_running) {
+                runBtn.classList.add('hidden');
+                stopBtn.classList.remove('hidden');
+            } else {
+                runBtn.classList.remove('hidden');
+                stopBtn.classList.add('hidden');
+            }
+
+            // อัปเดตปุ่ม Pipeline ด้านบนสุด และป้ายลอยเหนือหัวตัวการ์ตูน 3D
+            const stepsContainer = document.getElementById('pipeline-steps');
+            let stepsHtml = '';
+            let doneCount = 0;
+
+            agentsConfig.forEach((ag, idx) => {
+                const st = (state.agents && state.agents[ag.role]) || { status: 'Idle', action: 'Waiting' };
+                const isWorking = st.status === 'Working';
+                const isDone = st.status === 'Done';
+                if (isDone) doneCount++;
+
+                // 1. อัปเดตแถบ Pipeline ด้านบน
+                let pillClass = 'border-slate-700 text-slate-400 bg-slate-900/60';
+                let icon = '○';
+                if (isDone) {
+                    pillClass = 'border-emerald-500 text-emerald-300 bg-emerald-500/15';
+                    icon = '✓';
+                } else if (isWorking) {
+                    pillClass = 'border-amber-400 text-amber-300 bg-amber-500/20 animate-pulse';
+                    icon = '⚡';
+                }
+                stepsHtml += `<span class="text-xs px-3 py-1 rounded-full border font-medium ${pillClass}">${icon} ${ag.short}</span>`;
+                if (idx < agentsConfig.length - 1) {
+                    stepsHtml += `<span class="text-slate-600 text-xs">→</span>`;
+                }
+
+                // 2. อัปเดตตัวการ์ตูน 3D และป้ายลอยเหนือหัว
+                const obj = agent3DObjects[ag.role];
+                if (obj) {
+                    obj.status = st.status;
+                    const statusTextEl = obj.bubbleEl.querySelector('.status-text');
+                    const checkEl = obj.bubbleEl.querySelector('.check-badge');
+
+                    if (isWorking) {
+                        obj.bubbleEl.classList.add('working');
+                        statusTextEl.innerHTML = `<span class="text-emerald-400 font-semibold">Working · ${st.action}</span>`;
+                        checkEl.classList.add('hidden');
+                    } else if (isDone) {
+                        obj.bubbleEl.classList.remove('working');
+                        statusTextEl.innerHTML = `<span class="text-emerald-400">Done · ${st.action}</span>`;
+                        checkEl.classList.remove('hidden');
+                    } else {
+                        obj.bubbleEl.classList.remove('working');
+                        statusTextEl.innerHTML = `<span class="text-slate-400">Waiting</span>`;
+                        checkEl.classList.add('hidden');
+                    }
+                }
+            });
+            stepsContainer.innerHTML = stepsHtml;
+
+            // คำนวณหลอด Progress และประมาณการ Token จากปริมาณ Log
+            const progressPct = Math.max(8, Math.round((doneCount / agentsConfig.length) * 100));
+            document.getElementById('progress-bar').style.width = `${progressPct}%`;
+
+            if (state.logs) {
+                const logsDiv = document.getElementById('logs');
+                logsDiv.innerHTML = state.logs.map(l => `<div class="border-b border-slate-900 pb-1">${l}</div>`).join('');
+                
+                // ประมาณการ Token สะสมให้ดูมีชีวิตชีวาเหมือนในภาพ
+                estimatedTokens = state.logs.length * 420 + (doneCount * 1850);
+                document.getElementById('token-count').innerText = estimatedTokens.toLocaleString();
+                document.getElementById('token-up').innerText = Math.round(estimatedTokens * 0.65).toLocaleString();
+                document.getElementById('token-down').innerText = Math.round(estimatedTokens * 0.35).toLocaleString();
+            }
+        }
+
+        async function fetchState() {
+            try {
+                const res = await fetch('/api/state?t=' + new Date().getTime());
+                if (res.ok) {
+                    const data = await res.json();
+                    renderOffice(data);
+                }
+            } catch (e) {}
+        }
+        setInterval(fetchState, 1000);
+        fetchState();
+    </script>
+</body>
+</html>
